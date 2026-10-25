@@ -30,3 +30,20 @@ La búsqueda no es lineal, sino expansiva:
 - [x] Definición de concepto base.
 - [ ] Diseño de flujo de datos.
 - [ ] Prototipo de unificación de memorias.
+
+## 📔 Bitácora de Diseño (Log)
+
+### Octubre 2026
+- **Concepto Inicial:** Definición de la arquitectura híbrida (Identidad + Experiencia).
+- **Analogía de Ondas:** Propuesta de unificación de memorias mediante "interferencia constructiva" para evitar redundancias.
+- **Recuperación Asociativa:** Implementación de búsquedas en cascada para traer contexto relacionado automáticamente.
+- **Cambio de Estrategia:** Decisión de pasar de pruebas manuales a un enfoque de **Benchmarking Profesional**.
+
+## 📊 MemBench (El "CrystalDiskMark" de la Memoria)
+
+Para evitar la subjetividad, el proyecto implementará un harness de evaluación automatizado:
+
+1. **Dataset de Estrés:** Creación de casos de prueba con redundancias, complementos y contradicciones.
+2. **Inyección Automatizada:** Simulación de múltiples conversaciones para llenar la memoria.
+3. **Proceso de Consolidación:** Ejecución del ciclo de "Sueño" para unificar la información.
+4. **Métrica de Score:** Comparación de la respuesta final contra una "Respuesta de Oro" para medir la eficiencia de la unificación.
