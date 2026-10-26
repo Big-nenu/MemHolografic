@@ -1,10 +1,15 @@
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import json
 import time
 from mem_engine import MemHolograficEngine
 
 def run_benchmark():
     dataset_path = "tests/dataset.jsonl"
-    engine = MemHolograficEngine()
+    # FIX: Usar base de datos aislada para pruebas
+    engine = MemHolograficEngine(db_path="tests/bench.db")
     
     results = []
     
@@ -16,20 +21,24 @@ def run_benchmark():
             trajectory = case["trajectory"]
             gold = case["gold_answer"]
             
-            # Reset DB for each case to avoid contamination
-            engine._init_db()
+            engine.clear_db()
             
-            # 1. Injection Phase with pauses
+            # 1. Injection Phase
             for phrase in trajectory:
-                engine.inject_fact(phrase)
-                time.sleep(0.1) # Stability pause
+                engine.inject(phrase)
+                time.sleep(0.1)
             
-            # 2. Retrieval Phase
-            final_memory = engine.get_final_state()
+            # 2. Dreaming Phase (FIX: Ahora es parte obligatoria del proceso)
+            print(f"Dreaming for case {case_id}...")
+            engine.dream()
+            
+            # 3. Retrieval Phase
+            final_memory = engine.get_all_facts()
             best_fact = max(final_memory, key=len) if final_memory else "No memory"
             
-            # 3. Evaluation (Overlap based)
-            success = any(word in best_fact.lower() for word in gold.lower().split() if len(word) > 5)
+            gold_words = [w.lower() for w in gold.split() if len(w) > 5]
+            matches = sum(1 for w in gold_words if w in best_fact.lower())
+            success = (matches / len(gold_words) >= 0.3) if gold_words else False
             
             results.append({
                 "id": case_id,
@@ -38,8 +47,7 @@ def run_benchmark():
                 "gold": gold
             })
 
-    # Final Report
-    print("\n=== MEMBENCH FINAL REPORT (Lighweight Version) ===")
+    print("\n=== MEMBENCH FINAL REPORT (Professional Version) ===")
     print(f"Total Cases: {len(results)}")
     successes = sum(1 for r in results if r["success"])
     print(f"Successful Unifications: {successes}")

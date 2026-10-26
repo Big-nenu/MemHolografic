@@ -3,20 +3,32 @@ from mem_engine import MemHolograficEngine
 
 engine = MemHolograficEngine()
 
-if len(sys.argv) < 3:
-    print("Usage: python mem_cli.py [inject|query] \"text\"")
+if len(sys.argv) < 2:
+    print("Usage: python mem_cli.py [inject|query|dream] \"text\"")
     sys.exit(1)
 
 cmd = sys.argv[1]
-text = sys.argv[2]
 
 if cmd == "inject":
-    print(engine.inject(text))
+    if len(sys.argv) < 3:
+        print("Usage: python mem_cli.py inject \"text\"")
+        sys.exit(1)
+    print(engine.inject(sys.argv[2]))
 elif cmd == "query":
-    res = engine.query(text)
-    if not res:
+    if len(sys.argv) < 3:
+        print("Usage: python mem_cli.py query \"text\"")
+        sys.exit(1)
+    res = engine.query(sys.argv[2])
+    if isinstance(res, str):
+        print(res)
+    elif res:
+        for sim, fid, energy, content in res:
+            print(f"Sim: {sim:.4f} | ID: {fid} | Energy: {energy:.2f} | {content}")
+    else:
         print("No related memories found.")
-    for sim, fid, energy, content in res:
-        print(f"Sim: {sim:.4f} | ID: {fid} | Energy: {energy:.2f} | {content}")
+elif cmd == "dream":
+    result = engine.dream()
+    if result:
+        print(result)
 else:
-    print("Unknown command")
+    print("Unknown command. Use: inject, query, or dream")
