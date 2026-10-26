@@ -47,3 +47,9 @@ Para evitar la subjetividad, el proyecto implementará un harness de evaluación
 2. **Inyección Automatizada:** Simulación de múltiples conversaciones para llenar la memoria.
 3. **Proceso de Consolidación:** Ejecución del ciclo de "Sueño" para unificar la información.
 4. **Métrica de Score:** Comparación de la respuesta final contra una "Respuesta de Oro" para medir la eficiencia de la unificación.
+
+## 🧪 Primer Intento de Benchmark (El "Gran Fallo")
+**Fecha:** 25 de Octubre, 2026
+**Resultado:** Accuracy: 0.00%
+**Análisis:** El sistema sufrió un colapso total en la recuperación de datos debido a errores de conexión con el servidor de embeddings (Ollama 404/Connection Error). 
+**Lección Aprendida:** La arquitectura es viable en teoría, pero la implementación requiere un sistema de "Resiliencia" (Retry logic) y una gestión de carga para evitar que el motor de embeddings se sature. El "fracaso" confirmó la necesidad de un middleware de estabilidad entre el agente y el modelo de embedding.
