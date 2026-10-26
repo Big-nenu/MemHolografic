@@ -36,6 +36,9 @@ La búsqueda no es lineal, sino expansiva:
 Se implementó y validó el motor de **Interferencia Constructiva** utilizando `nomic-embed-text` y SQLite.
 - **Prueba de Colisión:** Se inyectaron hechos relacionados sobre entrelazamiento cuántico. El sistema detectó la similitud semántica, fusionó los registros y elevó la **Energía** del dato (de 0.5 $\rightarrow$ 0.7 $\rightarrow$ 0.9 $\rightarrow$ 1.0).
 - **Prueba de Recuperación:** El motor recuperó la síntesis consolidada basándose en la similitud del vector, eliminando la redundancia en la base de datos.
+- **Prueba de Interacción Social:** Dos personalidades distintas interactuaron exclusivamente a través de la memoria, consolidando fragmentos de preferencias personales en un "Perfil Holográfico" sintetizado.
+- **Prueba de Debate Coordinado:** Un orquestador coordinó un diálogo entre dos posturas opuestas. El sistema fusionó argumentos contradictorios en una "Onda Maestra" de síntesis filosófica.
+- **Validación Externa:** Los logs de memoria fueron procesados por NotebookLM, validando que la estructura semántica generada es coherente y apta para análisis de alto nivel.
 
 ## 📔 Bitácora de Diseño (Log)
 
