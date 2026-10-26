@@ -1,4 +1,5 @@
 import json
+import time
 from mem_engine import MemHolograficEngine
 
 def run_benchmark():
@@ -15,22 +16,19 @@ def run_benchmark():
             trajectory = case["trajectory"]
             gold = case["gold_answer"]
             
-            # Clear DB for each case to avoid contamination
+            # Reset DB for each case to avoid contamination
             engine._init_db()
             
-            # 1. Injection Phase
+            # 1. Injection Phase with pauses
             for phrase in trajectory:
                 engine.inject_fact(phrase)
+                time.sleep(0.1) # Stability pause
             
-            # 2. Retrieval Phase (Simulate query)
-            # We look for the most energetic fact related to the first phrase of trajectory
+            # 2. Retrieval Phase
             final_memory = engine.get_final_state()
-            # For simplicity, we take the most "consolidated" (longest/richest) fact
-            # In a real system, we'd query using a vector.
             best_fact = max(final_memory, key=len) if final_memory else "No memory"
             
-            # 3. Evaluation (Simple overlap for prototype)
-            # In real life, we'd use a LLM to grade the similarity
+            # 3. Evaluation (Overlap based)
             success = any(word in best_fact.lower() for word in gold.lower().split() if len(word) > 5)
             
             results.append({
@@ -40,8 +38,8 @@ def run_benchmark():
                 "gold": gold
             })
 
-    # Print Final Report
-    print("\n=== MEMBENCH FINAL REPORT ===")
+    # Final Report
+    print("\n=== MEMBENCH FINAL REPORT (Lighweight Version) ===")
     print(f"Total Cases: {len(results)}")
     successes = sum(1 for r in results if r["success"])
     print(f"Successful Unifications: {successes}")
