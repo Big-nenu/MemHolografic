@@ -30,7 +30,7 @@ La búsqueda no es lineal, sino expansiva:
 - [x] Definición de concepto base.
 - [x] Diseño de flujo de datos.
 - [x] Prototipo de unificación de memorias (VALIDADO).
-- [ ] Implementación de Interferencia Destructiva (Sleeptime/Corrección).
+- [x] Implementación de Interferencia Destructiva y Sleeptime (VALIDADO).
 
 ## ✅ Validación del Prototipo (25 Octubre, 2026)
 Se implementó y validó el motor de **Interferencia Constructiva** utilizando `nomic-embed-text` y SQLite.
@@ -38,6 +38,7 @@ Se implementó y validó el motor de **Interferencia Constructiva** utilizando `
 - **Prueba de Recuperación:** El motor recuperó la síntesis consolidada basándose en la similitud del vector, eliminando la redundancia en la base de datos.
 - **Prueba de Interacción Social:** Dos personalidades distintas interactuaron exclusivamente a través de la memoria, consolidando fragmentos de preferencias personales en un "Perfil Holográfico" sintetizado.
 - **Prueba de Debate Coordinado:** Un orquestador coordinó un diálogo entre dos posturas opuestas. El sistema fusionó argumentos contradictorios en una "Onda Maestra" de síntesis filosófica.
+- **Validación de Contexto y Excepciones:** Se demostró que el sistema distingue entre verdades generales y excepciones específicas (ej. cielo azul vs. auroras boreales), evitando la eliminación de datos valiosos.
 - **Validación Externa:** Los logs de memoria fueron procesados por NotebookLM, validando que la estructura semántica generada es coherente y apta para análisis de alto nivel.
 
 ## 📔 Bitácora de Diseño (Log)
