@@ -1,38 +1,52 @@
 import sys
+import argparse
 from mem_engine import MemHolograficEngine
 
-engine = MemHolograficEngine()
+def main():
+    parser = argparse.ArgumentParser(description="MemHolografic CLI - Gestor de Memoria Semántica")
+    parser.add_argument("command", choices=["inject", "query", "dream", "reflect", "clear"], help="Comando a ejecutar")
+    parser.add_argument("text", nargs="?", help="Texto para inyectar o consultar")
+    parser.add_argument("-n", "--namespace", default="default", help="Namespace/Proyecto para la operación (default: 'default')")
+    parser.add_argument("-e", "--energy", type=float, default=0.5, help="Energía inicial para la inyección (default: 0.5)")
 
-if len(sys.argv) < 2:
-    print("Usage: python mem_cli.py [inject|query|dream|reflect] \"text\"")
-    sys.exit(1)
+    args = parser.parse_args()
+    engine = MemHolograficEngine()
 
-cmd = sys.argv[1]
-
-if cmd == "inject":
-    if len(sys.argv) < 3:
-        print("Usage: python mem_cli.py inject \"text\"")
-        sys.exit(1)
-    print(engine.inject(sys.argv[2]))
-elif cmd == "query":
-    if len(sys.argv) < 3:
-        print("Usage: python mem_cli.py query \"text\"")
-        sys.exit(1)
-    res = engine.query(sys.argv[2])
-    if isinstance(res, str):
-        print(res)
-    elif res:
-        for sim, fid, energy, content in res:
-            print(f"Sim: {sim:.4f} | ID: {fid} | Energy: {energy:.2f} | {content}")
+    if args.command == "inject":
+        if not args.text:
+            print("Error: El comando 'inject' requiere un texto.")
+            return
+        print(engine.inject(args.text, energy=args.energy, namespace=args.namespace))
+    
+    elif args.command == "query":
+        if not args.text:
+            print("Error: El comando 'query' requiere un texto.")
+            return
+        res = engine.query(args.text, namespace=args.namespace)
+        if isinstance(res, str):
+            print(res)
+        elif res:
+            for sim, fid, energy, content in res:
+                print(f"Sim: {sim:.4f} | ID: {fid} | Energy: {energy:.2f} | {content}")
+        else:
+            print("No related memories found.")
+            
+    elif args.command == "dream":
+        result = engine.dream(namespace=args.namespace)
+        if result:
+            print(result)
+            
+    elif args.command == "reflect":
+        result = engine.reflect(namespace=args.namespace)
+        if result:
+            print(result)
+    
+    elif args.command == "clear":
+        engine.clear_db(namespace=args.namespace)
+        print(f"Memoria limpiada para el namespace: {args.namespace}")
+    
     else:
-        print("No related memories found.")
-elif cmd == "dream":
-    result = engine.dream()
-    if result:
-        print(result)
-elif cmd == "reflect":
-    result = engine.reflect()
-    if result:
-        print(result)
-else:
-    print("Unknown command. Use: inject, query, dream, or reflect")
+        print("Comando desconocido.")
+
+if __name__ == "__main__":
+    main()
