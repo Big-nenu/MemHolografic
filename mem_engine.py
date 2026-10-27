@@ -22,7 +22,7 @@ CLASSIFICATION_TOPICS = [
 ]
 
 class MemHolograficEngine:
-    def __init__(self, db_path="memoria.db"):
+    def __init__(self, db_path="memoria-2.db"):
         self.db_path = db_path
         self._init_db()
 

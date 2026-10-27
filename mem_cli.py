@@ -10,7 +10,7 @@ def main():
     parser.add_argument("-e", "--energy", type=float, default=0.5, help="Energía inicial para la inyección (default: 0.5)")
 
     args = parser.parse_args()
-    engine = MemHolograficEngine(db_path="memoria.db")
+    engine = MemHolograficEngine(db_path="memoria-2.db")
 
     if args.command == "inject":
         if not args.text:
