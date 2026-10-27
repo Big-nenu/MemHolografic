@@ -9,6 +9,7 @@ Variables de entorno opcionales (se ponen en la config del MCP en Cline):
 import contextlib
 import os
 import sys
+import webbrowser
 from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
@@ -25,12 +26,14 @@ mem_engine.LLM_MODEL = os.getenv("MEMHOLOGRAFIC_LLM_MODEL", mem_engine.LLM_MODEL
 
 DB_PATH = os.getenv("MEMHOLOGRAFIC_DB", str(BASE_DIR / "memoria.db"))
 NS = os.getenv("MEMHOLOGRAFIC_NAMESPACE", "default")
+GRAPH_ENABLED = os.getenv("MEMHOLOGRAFIC_GRAPH_ENABLED", "false").lower() == "true"
 
 INSTRUCTIONS = (
     "Memoria persistente del usuario entre conversaciones. "
     "AL INICIO de cada conversación llama list_memories antes de responder. "
     "Cuando el usuario diga algo duradero sobre sí mismo, sus proyectos o sus decisiones, llama inject_memory. "
-    "Antes de responder sobre el usuario o su historial, llama query_memory."
+    "Antes de responder sobre el usuario o su historial, llama query_memory. "
+    "Si el usuario quiere ver el grafo de relaciones de su memoria, llama generate_graph (requiere MEMHOLOGRAFIC_GRAPH_ENABLED=true)."
 )
 
 mcp = FastMCP("MemHolografic", instructions=INSTRUCTIONS)
@@ -114,6 +117,27 @@ def clear_memory(confirm: bool = False) -> str:
     with _quiet():
         engine.clear_db(namespace=NS)
     return "Memoria borrada."
+
+
+@mcp.tool()
+def generate_graph(open_browser: bool = True) -> str:
+    """Genera un grafo visual de las relaciones entre entidades de la memoria.
+    Requiere MEMHOLOGRAFIC_GRAPH_ENABLED=true. Usa qwen2.5:0.5b para extraer
+    entidades y relaciones, y vis-network (CDN) para renderizar en el navegador."""
+    if not mem_engine.GRAPH_ENABLED:
+        return ("El generador de grafo está desactivado. "
+                "Configura MEMHOLOGRAFIC_GRAPH_ENABLED=true para habilitarlo.")
+    with _quiet():
+        resultado = engine.generate_graph_html(namespace=NS)
+    output_path = resultado.get("output_path", "memoria_grafo.html")
+    mensaje = f"Grafo generado: {resultado['entities']} entidades, {resultado['relationships']} relaciones. Archivo: {output_path}"
+    if open_browser:
+        try:
+            webbrowser.open("file://" + os.path.abspath(output_path))
+            mensaje += " (abierto en el navegador)."
+        except Exception as e:
+            mensaje += f" (no se pudo abrir el navegador: {e})."
+    return mensaje
 
 
 if __name__ == "__main__":

@@ -14,6 +14,11 @@ LLM_MODEL = os.getenv("MEMHOLOGRAFIC_LLM_MODEL", "tev1:0.8b")
 # Modelo ligero para síntesis y reflexión (generación de prose). tev1 es solo de decisiones.
 SYNTHESIS_MODEL = os.getenv("MEMHOLOGRAFIC_SYNTHESIS_MODEL", "qwen2.5:0.5b")
 
+# Generador de grafo (opcional, bajo demanda, ligero)
+GRAPH_ENABLED = os.getenv("MEMHOLOGRAFIC_GRAPH_ENABLED", "false").lower() == "true"
+GRAPH_MODEL = os.getenv("MEMHOLOGRAFIC_GRAPH_MODEL", SYNTHESIS_MODEL)
+GRAPH_OUTPUT_PATH = os.getenv("MEMHOLOGRAFIC_GRAPH_OUTPUT", "memoria_grafo.html")
+
 # Lista de temas predefinidos para clasificación automática
 CLASSIFICATION_TOPICS = [
     "identidad", "proyecto", "trabajo", "estudios", "tecnologia",
@@ -44,6 +49,12 @@ class MemHolograficEngine:
             # Insertar temas predefinidos si no existen
             for topic in CLASSIFICATION_TOPICS:
                 cursor.execute("INSERT OR IGNORE INTO topics (topic_name, description) VALUES (?, ?)", (topic, f"Tema: {topic}"))
+            # Tablas para el grafo de relaciones (opcional, solo se usan si está habilitado)
+            cursor.execute("CREATE TABLE IF NOT EXISTS entities (id INTEGER PRIMARY KEY AUTOINCREMENT, nombre TEXT UNIQUE NOT NULL, tipo TEXT, embedding TEXT)")
+            cursor.execute("CREATE TABLE IF NOT EXISTS relationships (id INTEGER PRIMARY KEY AUTOINCREMENT, entidad_origen TEXT NOT NULL, entidad_destino TEXT NOT NULL, tipo_relacion TEXT NOT NULL, hecho_origen_id INTEGER, peso REAL DEFAULT 1.0, FOREIGN KEY (hecho_origen_id) REFERENCES facts(id))")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_entities_nombre ON entities(nombre)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_relationships_origen ON relationships(entidad_origen)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_relationships_destino ON relationships(entidad_destino)")
             conn.commit()
 
     def clear_db(self, namespace=None):
@@ -379,6 +390,191 @@ class MemHolograficEngine:
                 self.inject(reflection, energy=0.3, namespace=namespace)
                 return f"Reflexión autónoma inyectada en {namespace}: {reflection}"
             return "tev no pudo encontrar una conexión interesante esta vez."
+
+    # --- GENERADOR DE GRAFO (opcional, bajo demanda) ---
+
+    def extract_graph_entities(self, text):
+        """Usa qwen2.5:0.5b para extraer entidades y relaciones de un texto.
+        Devuelve lista de tuplas: (origen, destino, tipo_relacion, contexto_breve)."""
+        prompt = f"""Eres un extractor de entidades y relaciones para un grafo del conocimiento.
+Analiza el siguiente texto y devuelve SOLO un JSON válido con esta estructura:
+{{"entidades": [{{"nombre": "...", "tipo": "..."}}], "relaciones": [{{"origen": "...", "destino": "...", "relacion": "..."}}]}}
+
+Reglas:
+- Extrae entidades nombradas: personas, proyectos, empresas, tecnologías, lugares, conceptos.
+- Tipos de entidad válidos: persona, proyecto, tecnologia, lugar, concepto, habilidad, juego.
+- Relaciones válidas: trabaja_en, estudio_en, usa, vive_en, gusta_de, interesa_en, escribio, creo, es_de, relacionado_con.
+- No inventes entidades que no estén en el texto.
+- Si no hay entidades claras, devuelve arrays vacíos.
+
+Texto: {text}
+
+JSON:"""
+        try:
+            r = requests.post(OLLAMA_GEN_URL, json={"model": GRAPH_MODEL, "prompt": prompt, "stream": False}, timeout=30)
+            if r.status_code == 200:
+                response = r.json().get("response", "").strip()
+                # Intentar extraer el JSON de la respuesta
+                start = response.find("{")
+                end = response.rfind("}")
+                if start != -1 and end != -1 and end > start:
+                    json_str = response[start:end+1]
+                    import json as _json
+                    data = _json.loads(json_str)
+                    entidades = data.get("entidades", [])
+                    relaciones = data.get("relaciones", [])
+                    resultado = []
+                    for rel in relaciones:
+                        resultado.append((
+                            rel.get("origen", ""),
+                            rel.get("destino", ""),
+                            rel.get("relacion", "relacionado_con"),
+                            text[:80]
+                        ))
+                    return resultado, entidades
+        except Exception:
+            pass
+        return [], []
+
+    def build_graph_from_facts(self, namespace="default"):
+        """Extrae entidades y relaciones de todos los hechos activos del namespace."""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT id, content FROM facts WHERE namespace=? ORDER BY id", (namespace,))
+            facts = cursor.fetchall()
+
+        if not facts:
+            return {"entities": [], "relationships": [], "mensaje": "No hay hechos para graficar."}
+
+        all_entities = {}
+        all_relationships = []
+
+        for fact_id, content in facts:
+            relaciones, entidades = self.extract_graph_entities(content)
+            # Registrar entidades
+            for ent in entidades:
+                nombre = ent.get("nombre", "")
+                tipo = ent.get("tipo", "concepto")
+                if nombre and nombre not in all_entities:
+                    all_entities[nombre] = {"nombre": nombre, "tipo": tipo, "embedding": None}
+            # Registrar relaciones
+            for origen, destino, tipo_rel, contexto in relaciones:
+                if origen and destino:
+                    all_relationships.append({
+                        "origen": origen,
+                        "destino": destino,
+                        "relacion": tipo_rel,
+                        "hecho_id": fact_id,
+                        "contexto": contexto
+                    })
+
+        # Guardar en BD
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            for nombre, data in all_entities.items():
+                cursor.execute("INSERT OR IGNORE INTO entities (nombre, tipo, embedding) VALUES (?, ?, ?)",
+                               (nombre, data["tipo"], json.dumps(data["embedding"])))
+            for rel in all_relationships:
+                cursor.execute("INSERT INTO relationships (entidad_origen, entidad_destino, tipo_relacion, hecho_origen_id, peso) VALUES (?, ?, ?, ?, ?)",
+                               (rel["origen"], rel["destino"], rel["relacion"], rel["hecho_id"], 1.0))
+            conn.commit()
+
+        return {
+            "entities": list(all_entities.values()),
+            "relationships": all_relationships,
+            "mensaje": f"Grafo construido: {len(all_entities)} entidades, {len(all_relationships)} relaciones."
+        }
+
+    def generate_graph_html(self, namespace="default"):
+        """Genera un archivo HTML con vis-network (CDN) para visualizar el grafo."""
+        grafo = self.build_graph_from_facts(namespace)
+
+        entities = grafo.get("entities", [])
+        relationships = grafo.get("relationships", [])
+
+        # Construir nodos y aristas para vis-network
+        nodos_js = []
+        for ent in entities:
+            color = self._entity_color(ent.get("tipo", "concepto"))
+            nodos_js.append(f"{{id: {len(nodos_js)}, label: {json.dumps(ent['nombre'])}, title: {json.dumps(ent.get('tipo','concepto'))}, color: '{color}'}}")
+
+        aristas_js = []
+        for rel in relationships:
+            # Buscar índices de nodos
+            origen_idx = next((i for i, e in enumerate(entities) if e["nombre"] == rel["origen"]), None)
+            destino_idx = next((i for i, e in enumerate(entities) if e["nombre"] == rel["destino"]), None)
+            if origen_idx is not None and destino_idx is not None:
+                aristas_js.append(f"{{from: {origen_idx}, to: {destino_idx}, label: {json.dumps(rel['relacion'])}, arrows: 'to'}}" )
+
+        html = f"""<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>MemHolografic - Grafo de Memoria</title>
+<script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+<style type="text/css">
+  #mynetwork {{ width: 100vw; height: 100vh; position: absolute; top: 0; left: 0; }}
+  body {{ margin: 0; overflow: hidden; font-family: sans-serif; }}
+  #info {{ position: absolute; top: 10px; left: 10px; z-index: 100; background: rgba(255,255,255,0.9); padding: 10px; border-radius: 8px; max-width: 400px; }}
+  h1 {{ margin: 0 0 10px 0; font-size: 16px; color: #333; }}
+  p {{ margin: 5px 0; font-size: 13px; color: #555; }}
+</style>
+</head>
+<body>
+<div id="info">
+  <h1>🧠 MemHolografic - Grafo de Memoria</h1>
+  <p><strong>Entidades:</strong> {len(entities)}</p>
+  <p><strong>Relaciones:</strong> {len(relationships)}</p>
+  <p><strong>Namespace:</strong> {namespace}</p>
+  <p><small>Haz clic en los nodos para explorar. Arrastra para mover.</small></p>
+</div>
+<div id="mynetwork"></div>
+<script type="text/javascript">
+  var nodos = new vis.DataSet([{", ".join(nodos_js)}]);
+  var aristas = new vis.DataSet([{", ".join(aristas_js)}]);
+  var container = document.getElementById("mynetwork");
+  var data = {{ nodes: nodos, edges: aristas }};
+  var opciones = {{
+    nodes: {{ shape: 'dot', size: 16, font: {{ size: 14 }}, borderWidth: 2 }},
+    edges: {{ font: {{ size: 12, align: 'middle' }}, arrows: {{ to: {{ enabled: true, scaleFactor: 0.5 }} }}, smooth: {{ type: 'continuous' }} }},
+    physics: {{ enabled: true, solver: 'forceAtlas2Based', stabilization: {{ iterations: 100 }} }},
+    interaction: {{ hover: true, tooltipDelay: 200 }}
+  }};
+  var red = new vis.Network(container, data, opciones);
+  red.on("click", function (props) {{
+    if (props.nodes.length > 0) {{
+      var nodoId = props.nodes[0];
+      var nodo = nodos.get(nodoId);
+      console.log("Nodo seleccionado:", nodo.label);
+    }}
+  }});
+</script>
+</body>
+</html>"""
+
+        output_path = GRAPH_OUTPUT_PATH
+        with open(output_path, "w", encoding="utf-8") as f:
+            f.write(html)
+
+        return {
+            "output_path": output_path,
+            "entities": len(entities),
+            "relationships": len(relationships),
+            "mensaje": grafo.get("mensaje", "Grafo generado.")
+        }
+
+    def _entity_color(self, tipo):
+        colores = {
+            "persona": "#ff6b6b",
+            "proyecto": "#4ecdc4",
+            "tecnologia": "#45b7d1",
+            "lugar": "#96ceb4",
+            "concepto": "#ffeaa7",
+            "habilidad": "#fd79a8",
+            "juego": "#a29bfe",
+            "otro": "#b2bec3"
+        }
+        return colores.get(tipo, "#b2bec3")
 
 if __name__ == "__main__":
     print("Motor de Memoria cargado. Usa mem_cli.py para interactuar.")
