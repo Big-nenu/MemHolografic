@@ -24,7 +24,7 @@ from mem_engine import MemHolograficEngine  # noqa: E402
 mem_engine.EMBEDDING_MODEL = os.getenv("MEMHOLOGRAFIC_EMBED_MODEL", mem_engine.EMBEDDING_MODEL)
 mem_engine.LLM_MODEL = os.getenv("MEMHOLOGRAFIC_LLM_MODEL", mem_engine.LLM_MODEL)
 
-DB_PATH = os.getenv("MEMHOLOGRAFIC_DB", str(BASE_DIR / "memoria.db"))
+DB_PATH = os.getenv("MEMHOLOGRAFIC_DB", str(BASE_DIR / "data" / "memoria-2.db"))
 NS = os.getenv("MEMHOLOGRAFIC_NAMESPACE", "default")
 GRAPH_ENABLED = os.getenv("MEMHOLOGRAFIC_GRAPH_ENABLED", "false").lower() == "true"
 
