@@ -91,3 +91,25 @@ Para evitar la subjetividad, el proyecto implementará un harness de evaluación
 **Resultado:** Accuracy: 0.00%
 **Análisis:** El sistema sufrió un colapso total en la recuperación de datos debido a errores de conexión con el servidor de embeddings (Ollama 404/Connection Error). 
 **Lección Aprendida:** La arquitectura es viable en teoría, pero la implementación requiere un sistema de "Resiliencia" (Retry logic) y una gestión de carga para evitar que el motor de embeddings se sature.
+
+## 🛠️ Resolución de Problemas (Troubleshooting Guide)
+
+Durante la fase de integración con Cline (vía MCP), se identificaron y documentaron los siguientes errores críticos, junto con sus soluciones aplicadas.
+
+### 1. Error de Conexión MCP: "Connection closed" 💀
+- **Síntoma:** El servidor MCP (`memholografic`) aparecía en rojo en Cline, indicando que no podía conectarse.
+- **Diagnóstico:** Al ejecutar el servidor `mcp_server.py` manualmente desde la terminal, se reveló un `SyntaxError` oculto dentro de `mem_engine.py`. La causa raíz fue una corrupción del código: caracteres extraños (`//`) se habían insertado accidentalmente en varios nombres de variables y tablas (ejemplos: `archived_//facts`, `self.db_//path`, `max_//sim`). Esto provocó que el intérprete de Python cerrara el proceso antes de iniciar correctamente el handshake con Cline.
+- **Solución:** Se realizó una limpieza exhaustiva del archivo `mem_engine.py`, eliminando todos los artefactos y asegurando una sintaxis válida. Se verificó que el servidor arrancara sin errores ejecutándolo directamente.
+- **Lección:** Los errores de conexión en servidores MCP a menudo oculta un fallo de arranque del proceso. Siempre verifique el *log de error* ejecutando el script manualmente.
+
+### 2. Error de Ruta de Python: "spawn ENOENT" 🤖
+- **Síntoma:** Cline no podía encontrar el intérprete de Python especificado en `cline_mcp_settings.json`, lanzando un error `ENOENT`.
+- **Diagnóstico:** La ruta `C:\Users\Luis_Hdez\AppData\Local\Programs\Python\Python314\python.exe` especificada en la configuración no existía en el sistema. El comando `where python` reveló las rutas válidas.
+- **Solución:** Se corrigió la ruta del ejecutable de Python en `cline_mcp_settings.json` al valor verificado: `C:\Program Files\Python314\python.exe`.
+- **Recomendación General:** Siempre utilice el comando `where python` para obtener la ruta absoluta del intérprete antes de configurar un servidor MCP.
+
+### 3. Fallo de Recuperación entre Sesiones: El "Olvido Selectivo" 🧠❌
+- **Síntoma:** Aunque la conexión MCP funcionaba, Cline no "recordaba" información inyectada en conversaciones anteriores, devolviendo siempre *"No se encontraron recuerdos relacionados"*.
+- **Diagnóstico:** La raíz del problema fue un **desajuste de namespaces**. Los datos de Luis estaban almacenados en el namespace `"simulation"`, pero el servidor MCP (y por tanto, Cline) consultaban el namespace `"default"` por defecto. La IA buscaba la información en la "carpeta equivocada".
+- **Solución:** Se implementó una **Arquitectura de Namespace Dinámico** en `mcp_server.py`. El servidor ahora tiene una variable de entorno `MEMHOLOGRAFIC_NAMESPACE` (configurada en `"simulation"` por defecto) que permite redirigir las consultas al namespace correcto sin necesidad de que la IA lo especifique explícitamente en cada llamada. Esto mantiene el aislamiento de contexto (ideal para proyectos múltiples) y garantiza la persistencia entre sesiones.
+- **Verificación:** Pruebas con subagentes confirmaron la correcta inyección y recuperación de datos en el namespace `proof_test`, validando todo el flujo de trabajo.
