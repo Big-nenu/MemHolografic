@@ -611,7 +611,7 @@ JSON:"""
         nodos_js = []
         for ent in entities:
             color = self._entity_color(ent.get("tipo", "concepto"))
-            nodos_js.append(f"{{id: {len(nodos_js)}, label: {json.dumps(ent['nombre'])}, title: {json.dumps(ent.get('tipo','concepto'))}, color: '{color}'}}")
+            nodos_js.append(f"{{id: {len(nodos_js)}, label: {json.dumps(ent['nombre'])}, title: {json.dumps(ent.get('tipo','concepto'))}, color: '{color}', borderWidth: 3}}")
 
         aristas_js = []
         for rel in relationships:
@@ -619,7 +619,8 @@ JSON:"""
             origen_idx = next((i for i, e in enumerate(entities) if e["nombre"] == rel["origen"]), None)
             destino_idx = next((i for i, e in enumerate(entities) if e["nombre"] == rel["destino"]), None)
             if origen_idx is not None and destino_idx is not None:
-                aristas_js.append(f"{{from: {origen_idx}, to: {destino_idx}, label: {json.dumps(rel['relacion'])}, arrows: 'to'}}" )
+                edge_color = self._relation_color(rel.get("relacion", "relacionado_con"))
+                aristas_js.append(f"{{from: {origen_idx}, to: {destino_idx}, label: {json.dumps(rel['relacion'])}, arrows: 'to', color: '{edge_color}', font: {{ color: '{edge_color}' }}, smooth: {{ type: 'continuous', roundness: 0.2 }}, width: 2}}" )
 
         html = f"""<!DOCTYPE html>
 <html lang="es">
@@ -628,11 +629,12 @@ JSON:"""
 <title>MemHolografic - Grafo de Memoria</title>
 <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
 <style type="text/css">
-  #mynetwork {{ width: 100vw; height: 100vh; position: absolute; top: 0; left: 0; }}
-  body {{ margin: 0; overflow: hidden; font-family: sans-serif; }}
-  #info {{ position: absolute; top: 10px; left: 10px; z-index: 100; background: rgba(255,255,255,0.9); padding: 10px; border-radius: 8px; max-width: 400px; }}
-  h1 {{ margin: 0 0 10px 0; font-size: 16px; color: #333; }}
-  p {{ margin: 5px 0; font-size: 13px; color: #555; }}
+  body {{ margin: 0; overflow: hidden; font-family: sans-serif; background: #0a0a0a; color: #eee; }}
+  #mynetwork {{ width: 100vw; height: 100vh; position: absolute; top: 0; left: 0; background: #0a0a0a; }}
+  #info {{ position: absolute; top: 10px; left: 10px; z-index: 100; background: rgba(20, 20, 20, 0.9); padding: 15px; border-radius: 8px; max-width: 450px; border: 1px solid #333; }}
+  h1 {{ margin: 0 0 10px 0; font-size: 18px; color: #fff; }}
+  p {{ margin: 5px 0; font-size: 13px; color: #aaa; }}
+  strong {{ color: #fff; }}
 </style>
 </head>
 <body>
@@ -680,16 +682,31 @@ JSON:"""
 
     def _entity_color(self, tipo):
         colores = {
-            "persona": "#ff6b6b",
-            "proyecto": "#4ecdc4",
-            "tecnologia": "#45b7d1",
-            "lugar": "#96ceb4",
-            "concepto": "#ffeaa7",
-            "habilidad": "#fd79a8",
-            "juego": "#a29bfe",
-            "otro": "#b2bec3"
+            "persona": "#ff4d4d",
+            "proyecto": "#00d2ff",
+            "tecnologia": "#00ff88",
+            "lugar": "#ff9900",
+            "concepto": "#cc66ff",
+            "habilidad": "#ff66cc",
+            "juego": "#aa66ff",
+            "otro": "#888888"
         }
-        return colores.get(tipo, "#b2bec3")
+        return colores.get(tipo, "#888888")
+
+    def _relation_color(self, tipo_rel):
+        colores = {
+            "trabaja_en": "#ff4d4d",
+            "estudio_en": "#00d2ff",
+            "usa": "#00ff88",
+            "vive_en": "#ff9900",
+            "gusta_de": "#ff66cc",
+            "interesa_en": "#cc66ff",
+            "escribio": "#aa66ff",
+            "creo": "#ff9900",
+            "es_de": "#00d2ff",
+            "relacionado_con": "#888888"
+        }
+        return colores.get(tipo_rel, "#888888")
 
 if __name__ == "__main__":
     print("Motor de Memoria cargado. Usa mem_cli.py para interactuar.")
