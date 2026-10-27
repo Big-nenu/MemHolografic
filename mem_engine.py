@@ -8,8 +8,18 @@ import time
 # --- CONFIGURACIÓN ---
 OLLAMA_URL = "http://localhost:11434/api/embeddings"
 OLLAMA_GEN_URL = "http://localhost:11434/api/generate"
+OLLAMA_SYSTEMONE_URL = "http://localhost:11434/v1/systemone"
 EMBEDDING_MODEL = os.getenv("MEMHOLOGRAFIC_EMBED_MODEL", "embeddinggemma-2:270m")
 LLM_MODEL = os.getenv("MEMHOLOGRAFIC_LLM_MODEL", "tev1:0.8b")
+# Modelo ligero para síntesis y reflexión (generación de prose). tev1 es solo de decisiones.
+SYNTHESIS_MODEL = os.getenv("MEMHOLOGRAFIC_SYNTHESIS_MODEL", "qwen2.5:0.5b")
+
+# Lista de temas predefinidos para clasificación automática
+CLASSIFICATION_TOPICS = [
+    "identidad", "proyecto", "trabajo", "estudios", "tecnologia",
+    "fisica", "mecanica_cuantica", "astrofisica", "ciberseguridad",
+    "videojuegos", "preferencias", "otro"
+]
 
 class MemHolograficEngine:
     def __init__(self, db_path="memoria.db"):
@@ -23,6 +33,17 @@ class MemHolograficEngine:
             cursor.execute("CREATE TABLE IF NOT EXISTS facts (id INTEGER PRIMARY KEY AUTOINCREMENT, namespace TEXT DEFAULT 'default', content TEXT, energy REAL, embedding TEXT)")
             # Tabla de memoria profunda con namespace
             cursor.execute("CREATE TABLE IF NOT EXISTS archived_facts (id INTEGER PRIMARY KEY AUTOINCREMENT, namespace TEXT DEFAULT 'default', content TEXT, energy REAL, embedding TEXT)")
+            # Tabla de temas para búsqueda por temas
+            cursor.execute("CREATE TABLE IF NOT EXISTS topics (id INTEGER PRIMARY KEY AUTOINCREMENT, topic_name TEXT UNIQUE NOT NULL, description TEXT)")
+            # Relación muchos-a-muchos entre hechos y temas
+            cursor.execute("CREATE TABLE IF NOT EXISTS fact_topics (fact_id INTEGER NOT NULL, topic_id INTEGER NOT NULL, FOREIGN KEY (fact_id) REFERENCES facts(id), FOREIGN KEY (topic_id) REFERENCES topics(id), PRIMARY KEY (fact_id, topic_id))")
+            # Índices para búsquedas rápidas
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_facts_namespace ON facts(namespace)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_fact_topics_topic ON fact_topics(topic_id)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_fact_topics_fact ON fact_topics(fact_id)")
+            # Insertar temas predefinidos si no existen
+            for topic in CLASSIFICATION_TOPICS:
+                cursor.execute("INSERT OR IGNORE INTO topics (topic_name, description) VALUES (?, ?)", (topic, f"Tema: {topic}"))
             conn.commit()
 
     def clear_db(self, namespace=None):
@@ -55,6 +76,52 @@ class MemHolograficEngine:
                 time.sleep(1)
         return None
 
+    def classify_topics(self, text):
+        """Clasifica un texto en temas usando tev1:0.8b vía /v1/systemone (modelo de decisiones).
+        Devuelve lista de nombres de temas detectados."""
+        try:
+            # Para 'choice', criterios mapea nombre de tema -> descripción
+            criteria = {topic: f"El texto trata sobre {topic}" for topic in CLASSIFICATION_TOPICS}
+            payload = {
+                "model": LLM_MODEL,
+                "state": text,
+                "questions": {
+                    "temas": {
+                        "type": "choice",
+                        "instructions": "Selecciona el tema que mejor se aplique a este texto.",
+                        "criteria": criteria
+                    }
+                }
+            }
+            r = requests.post(OLLAMA_SYSTEMONE_URL, json=payload, timeout=30)
+            if r.status_code == 200:
+                data = r.json()
+                answers = data.get("answers", {})
+                temas_res = answers.get("temas", {})
+                # Para 'choice', la respuesta viene en .choice
+                choice = temas_res.get("choice", "")
+                if isinstance(choice, str) and choice in CLASSIFICATION_TOPICS:
+                    return [choice]
+                # Fallback: si devuelve una lista
+                picks = temas_res.get("picks", [])
+                if isinstance(picks, list):
+                    return [p for p in picks if p in CLASSIFICATION_TOPICS]
+        except Exception:
+            pass
+        return []
+
+    def _store_topics(self, cursor, fact_id, topics):
+        """Guarda la relación entre un hecho y sus temas en fact_topics."""
+        for topic_name in topics:
+            cursor.execute("SELECT id FROM topics WHERE topic_name=?", (topic_name,))
+            row = cursor.fetchone()
+            if row:
+                topic_id = row[0]
+                cursor.execute(
+                    "INSERT OR IGNORE INTO fact_topics (fact_id, topic_id) VALUES (?, ?)",
+                    (fact_id, topic_id)
+                )
+
     def calc_sim(self, v1, v2):
         if not v1 or not v2: return 0.0
         dot = sum(a * b for a, b in zip(v1, v2))
@@ -75,7 +142,7 @@ class MemHolograficEngine:
     def _ask_llm_synthesis(self, t1, t2):
         prompt = f"Eres un sintetizador de conocimiento. Tienes dos frases que dicen cosas similares. Crea una sola frase consolidada que mantenga la esencia de ambas, eliminando redundancias y siendo preciso. \n\nFrase 1: {t1}\nFrase 2: {t2}\n\nRespuesta (solo la frase sintetizada):"
         try:
-            r = requests.post(OLLAMA_GEN_URL, json={"model": LLM_MODEL, "prompt": prompt, "stream": False}, timeout=30)
+            r = requests.post(OLLAMA_GEN_URL, json={"model": SYNTHESIS_MODEL, "prompt": prompt, "stream": False}, timeout=30)
             if r.status_code == 200:
                 return r.json().get("response", "").strip()
         except:
@@ -92,7 +159,7 @@ class MemHolograficEngine:
             f"La respuesta debe ser una sola frase corta que empiece con 'Intuición: '.\n\nRespuesta:"
         )
         try:
-            r = requests.post(OLLAMA_GEN_URL, json={"model": LLM_MODEL, "prompt": prompt, "stream": False}, timeout=30)
+            r = requests.post(OLLAMA_GEN_URL, json={"model": SYNTHESIS_MODEL, "prompt": prompt, "stream": False}, timeout=30)
             if r.status_code == 200:
                 return r.json().get("response", "").strip()
         except:
@@ -146,6 +213,9 @@ class MemHolograficEngine:
                     decision = self._ask_llm_conflict(old_content, content)
                     if "CONTRADICTORIO" in decision:
                         cursor.execute("INSERT INTO facts (namespace, content, energy, embedding) VALUES (?, ?, ?, ?)", (namespace, content, energy, json.dumps(vec)))
+                        fact_id = cursor.lastrowid
+                        topics = self.classify_topics(content)
+                        self._store_topics(cursor, fact_id, topics)
                         conn.commit()
                         return f"🚫 CONTRADICCIÓN detectada. Guardado como dato independiente."
                     
@@ -154,11 +224,22 @@ class MemHolograficEngine:
                     new_vec = self.get_embedding(new_content)
                     final_vec_blob = json.dumps(new_vec if new_vec else vec)
                     cursor.execute("UPDATE facts SET content=?, energy=?, embedding=? WHERE id=?", (new_content, new_energy, final_vec_blob, best_collision_id))
+                    # Actualizar temas del hecho fusionado
+                    cursor.execute("DELETE FROM fact_topics WHERE fact_id=?", (best_collision_id,))
+                    new_topics = self.classify_topics(new_content)
+                    self._store_topics(cursor, best_collision_id, new_topics)
                     conn.commit()
+                    if new_topics:
+                        return f"🌊 COLISION con ID {best_collision_id}! Sim: {max_sim:.2f} Energy: {new_energy:.2f} Temas: {', '.join(new_topics)}"
                     return f"🌊 COLISION con ID {best_collision_id}! Sim: {max_sim:.2f} Energy: {new_energy:.2f}"
             else:
                 cursor.execute("INSERT INTO facts (namespace, content, energy, embedding) VALUES (?, ?, ?, ?)", (namespace, content, energy, json.dumps(vec)))
+                fact_id = cursor.lastrowid
+                topics = self.classify_topics(content)
+                self._store_topics(cursor, fact_id, topics)
                 conn.commit()
+                if topics:
+                    return f"📍 NUEVA ONDA. Temas: {', '.join(topics)}"
                 return "📍 NUEVA ONDA."
 
     def query(self, text, namespace="default"):
@@ -166,10 +247,29 @@ class MemHolograficEngine:
         if vec is None: return "Error: No embedding"
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
+            # Paso 1: Clasificar la consulta en temas
+            query_topics = self.classify_topics(text)
+            
+            # Paso 2: Obtener IDs de hechos filtrados por temas (si hay temas detectados)
+            topic_filtered_ids = None
+            if query_topics:
+                placeholders = ",".join(["?"] * len(query_topics))
+                cursor.execute(
+                    f"SELECT DISTINCT ft.fact_id FROM fact_topics ft "
+                    f"JOIN topics t ON ft.topic_id = t.id "
+                    f"WHERE t.topic_name IN ({placeholders})",
+                    query_topics
+                )
+                topic_filtered_ids = {row[0] for row in cursor.fetchall()}
+            
+            # Paso 3: Buscar en hechos activos (filtrados por temas si aplica)
             cursor.execute("SELECT id, energy, content, embedding FROM facts WHERE namespace=?", (namespace,))
             active_facts = cursor.fetchall()
             results = []
             for fid, fenergy, fcontent, fvec_blob in active_facts:
+                # Si hay filtro de temas, saltar hechos no relacionados
+                if topic_filtered_ids is not None and fid not in topic_filtered_ids:
+                    continue
                 try:
                     fvec = json.loads(fvec_blob)
                     sim = self.calc_sim(vec, fvec)
