@@ -1,3 +1,4 @@
+import os
 import sqlite3
 import json
 import requests
@@ -7,11 +8,11 @@ import time
 # --- CONFIGURACIÓN ---
 OLLAMA_URL = "http://localhost:11434/api/embeddings"
 OLLAMA_GEN_URL = "http://localhost:11434/api/generate"
-EMBEDDING_MODEL = "nomic-embed-text:latest"
-LLM_MODEL = "tev1" 
+EMBEDDING_MODEL = os.getenv("MEMHOLOGRAFIC_EMBED_MODEL", "embeddinggemma-2:270m")
+LLM_MODEL = os.getenv("MEMHOLOGRAFIC_LLM_MODEL", "tev1:0.8b")
 
 class MemHolograficEngine:
-    def __init__(self, db_path="prototype_memory.db"):
+    def __init__(self, db_path="memoria.db"):
         self.db_path = db_path
         self._init_db()
 
@@ -33,7 +34,7 @@ class MemHolograficEngine:
                 cursor.execute("DELETE FROM archived_facts WHERE namespace=?", (namespace,))
             else:
                 cursor.execute("DELETE FROM facts")
-                cursor.execute("DELETE FROM archived_//facts")
+                cursor.execute("DELETE FROM archived_facts")
             conn.commit()
 
     def get_embedding(self, text, retries=3):

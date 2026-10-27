@@ -113,3 +113,81 @@ Durante la fase de integración con Cline (vía MCP), se identificaron y documen
 - **Diagnóstico:** La raíz del problema fue un **desajuste de namespaces**. Los datos de Luis estaban almacenados en el namespace `"simulation"`, pero el servidor MCP (y por tanto, Cline) consultaban el namespace `"default"` por defecto. La IA buscaba la información en la "carpeta equivocada".
 - **Solución:** Se implementó una **Arquitectura de Namespace Dinámico** en `mcp_server.py`. El servidor ahora tiene una variable de entorno `MEMHOLOGRAFIC_NAMESPACE` (configurada en `"simulation"` por defecto) que permite redirigir las consultas al namespace correcto sin necesidad de que la IA lo especifique explícitamente en cada llamada. Esto mantiene el aislamiento de contexto (ideal para proyectos múltiples) y garantiza la persistencia entre sesiones.
 - **Verificación:** Pruebas con subagentes confirmaron la correcta inyección y recuperación de datos en el namespace `proof_test`, validando todo el flujo de trabajo.
+
+## 🔧 Cambios Recientes (27 de Octubre 2026)
+
+- **Modelos Ollama por defecto:** `EMBEDDING_MODEL` ahora es `embeddinggemma-2:270m` y `LLM_MODEL` es `tev1:0.8b`, leídos nativamente vía `os.getenv()` (`MEMHOLOGRAFIC_EMBED_MODEL`, `MEMHOLOGRAFIC_LLM_MODEL`).
+- **Unificación de base de datos:** Tanto `mem_engine.py` como `mem_cli.py` apuntan por defecto a `memoria.db`.
+- **Corrección de bug:** Eliminado carácter corrupto `//` en `archived_//facts` (línea 36 de `mem_engine.py`).
+- **Variables de entorno soportadas:**
+  - `MEMHOLOGRAFIC_DB` — ruta de la BD (default: `memoria.db`)
+  - `MEMHOLOGRAFIC_NAMESPACE` — namespace activo (default: `"default"`)
+  - `MEMHOLOGRAFIC_EMBED_MODEL` — modelo de embeddings en Ollama
+  - `MEMHOLOGRAFIC_LLM_MODEL` — modelo LLM en Ollama
+
+## 💬 Guía Rápida: Probar en otro chat
+
+Cuando abras una nueva conversación con Cline y el MCP `memholografic` esté activo, la memoria se carga sola. Solo pregunta:
+
+> "Hola, ¿cómo me llamo y qué estudié?"
+
+El sistema debería responder con los datos guardados en `memoria.db` sin que tengas que pedirle usar herramientas.
+
+Si no recuerda nada, verifica:
+1. Que solo tengas habilitado el MCP `memholografic` (deshabilita el de `memory` si lo hay).
+2. Que ambos apunten a la misma base de datos (`memoria.db`) y namespace (`default`).
+3. Que Ollama esté corriendo con `embeddinggemma-2:270m` y `tev1:0.8b` descargados.
+
+## 🚀 Roadmap: Búsqueda por Temas (memoria rápida y escalable)
+
+**Objetivo:** Que la consulta no tenga que comparar contra *todas* las filas de la BD, sino solo contra los temas relevantes.
+
+### Problema actual
+Hoy `query_memory` convierte la pregunta en un vector con `embeddinggemma`, lo compara contra **todos** los vectores guardados en `facts`, y devuelve los más similares. Funciona bien con cientos de recuerdos, pero se vuelve lento con miles.
+
+### Propuesta de arquitectura
+
+```
+Tabla facts (actual):
+  id, namespace, content, energy, embedding
+
+Nueva tabla topics:
+  id, topic_name, description
+
+Nueva tabla fact_topics (relación muchos-a-muchos):
+  fact_id, topic_id
+```
+
+### Flujo de consulta con temas
+
+1. **Al inyectar (`inject_memory`):** El modelo `tev` clasifica el contenido en uno o más temas (ej. "física", "videojuegos", "proyecto"). Se guarda la relación en `fact_topics`.
+2. **Al consultar (`query_memory`):**
+   - Paso A: `tev` detecta los temas de la pregunta (ej. "¿Qué estudiaste?" → tema "educación", "carrera").
+   - Paso B: Se filtran solo los `facts` vinculados a esos temas.
+   - Paso C: Se calcula similitud cosínea solo dentro de ese subconjunto (mucho más rápido).
+3. **Resultado:** Menos comparaciones, respuestas más rápidas, y escalable a miles de recuerdos.
+
+### Índices de SQLite
+Para acelerar aún más sin dependencias externas, se agregarían índices:
+```sql
+CREATE INDEX idx_facts_namespace ON facts(namespace);
+CREATE INDEX idx_fact_topics_topic ON fact_topics(topic_id);
+CREATE INDEX idx_fact_topics_fact ON fact_topics(fact_id);
+```
+
+### Opción opcional para escala masiva
+Si el proyecto crece mucho, se puede migrar el índice vectorial a una librería ligera como `faiss-cpu` o `chromadb`, manteniendo SQLite solo para metadatos. Esto se dejaría como módulo opcional para no complicar la instalación básica.
+
+---
+
+## 🎯 Tu idea de las "5 piedras → 2 crestas → 1 ola"
+
+Tu analogía ya está implementada en espíritu:
+
+| Tu idea | Implementación actual |
+|---------|----------------------|
+| Avientas 5 piedras (temas) | `query_memory` recupera los N recuerdos más similares |
+| Crestas se suman, valles se cancelan | Similitud cosínea filtra lo relevante del ruido |
+| Lanzas 2 piedras más para 1 cresta final | `trigger_reflection` / `merge_waves` sintetizan varios recuerdos en una respuesta |
+
+La búsqueda por temas sería el paso previo: **decidir dónde lanzar las 5 piedras** en lugar de lanzarlas a todo el estanque.
