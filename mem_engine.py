@@ -75,6 +75,23 @@ class MemHolograficEngine:
             pass
         return f"MERGED: {t1} | {t2}"
 
+    def _ask_llm_reflection(self, facts_list):
+        facts_str = "\n".join([f"- {f}" for f in facts_list])
+        prompt = (
+            f"Eres la unidad de reflexión de un cerebro digital. Tienes acceso a los siguientes recuerdos "
+            f"de alta energía que parecen pertenecer a temas distintos, pero que el sistema considera interesantes: \n\n{facts_str}\n\n"
+            f"Tu tarea es analizar estos datos y generar una HIPÓTESIS o INTUICIÓN. No resumas los datos, "
+            f"busca una conexión oculta, una analogía o una pregunta filosófica que una estos temas. "
+            f"La respuesta debe ser una sola frase corta que empiece con 'Intuición: '.\n\nRespuesta:"
+        )
+        try:
+            r = requests.post(OLLAMA_GEN_URL, json={"model": LLM_MODEL, "prompt": prompt, "stream": False}, timeout=30)
+            if r.status_code == 200:
+                return r.json().get("response", "").strip()
+        except:
+            pass
+        return None
+
     def merge_waves(self, t1, t2):
         return self._ask_llm_synthesis(t1, t2)
 
@@ -91,7 +108,7 @@ class MemHolograficEngine:
                 print(f"{r[0]:<5} | {e:<10.2f} | {r[2]}")
             print("-" * 100)
 
-    def inject(self, content):
+    def inject(self, content, energy=0.5):
         vec = self.get_embedding(content)
         if vec is None:
             return "❌ ERROR: No se obtuvo embedding."
@@ -114,29 +131,23 @@ class MemHolograficEngine:
                 cursor.execute("SELECT energy, content FROM facts WHERE id=?", (best_collision_id,))
                 res = cursor.fetchone()
                 if res:
-                    energy = float(res[0]) if res[0] is not None else 0.5
+                    energy_old = float(res[0]) if res[0] is not None else 0.5
                     old_content = res[1]
-                    
-                    # FIX: Filtro anti-contradicción inmediato
                     decision = self._ask_llm_conflict(old_content, content)
                     if "CONTRADICTORIO" in decision:
-                        # No fusionamos, guardamos como dato nuevo o archivamos el viejo
-                        cursor.execute("INSERT INTO facts (content, energy, embedding) VALUES (?, ?, ?)", (content, 0.5, json.dumps(vec)))
+                        cursor.execute("INSERT INTO facts (content, energy, embedding) VALUES (?, ?, ?)", (content, energy, json.dumps(vec)))
                         conn.commit()
                         return f"🚫 CONTRADICCIÓN detectada. Guardado como dato independiente."
                     
-                    new_energy = min(1.0, energy + 0.2)
+                    new_energy = min(1.0, energy_old + 0.2)
                     new_content = self.merge_waves(old_content, content)
-                    
-                    # FIX: Actualizar embedding para evitar drift
                     new_vec = self.get_embedding(new_content)
                     final_vec_blob = json.dumps(new_vec if new_vec else vec)
-                    
                     cursor.execute("UPDATE facts SET content=?, energy=?, embedding=? WHERE id=?", (new_content, new_energy, final_vec_blob, best_collision_id))
                     conn.commit()
                     return f"🌊 COLISION con ID {best_collision_id}! Sim: {max_sim:.2f} Energy: {new_energy:.2f}"
             else:
-                cursor.execute("INSERT INTO facts (content, energy, embedding) VALUES (?, ?, ?)", (content, 0.5, json.dumps(vec)))
+                cursor.execute("INSERT INTO facts (content, energy, embedding) VALUES (?, ?, ?)", (content, energy, json.dumps(vec)))
                 conn.commit()
                 return "📍 NUEVA ONDA."
 
@@ -228,6 +239,46 @@ class MemHolograficEngine:
                             processed_ids.add(id1); processed_ids.add(id2); changes_made += 1; break
             conn.commit()
             return f"Sleeptime finalizado. Cambios realizados: {changes_made}"
+
+    def reflect(self):
+        """Proceso de Reflexión Autónoma: emb encuentra patrones, tev genera hipótesis."""
+        print("\n💭 Iniciando proceso de Reflexión Autónoma...")
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT content, embedding FROM facts ORDER BY energy DESC LIMIT 20")
+            candidates = cursor.fetchall()
+            
+            if len(candidates) < 2:
+                return "No hay suficientes recuerdos fuertes para reflexionar."
+            
+            representatives = []
+            rep_vecs = []
+            
+            # El más fuerte siempre entra
+            first_content, first_vec_blob = candidates[0]
+            first_vec = json.loads(first_vec_blob)
+            representatives.append(first_content)
+            rep_vecs.append(first_vec)
+            
+            for content, vec_blob in candidates[1:]:
+                vec = json.loads(vec_blob)
+                if all(self.calc_sim(vec, rv) < 0.6 for rv in rep_vecs):
+                    representatives.append(content)
+                    rep_vecs.append(vec)
+                if len(representatives) >= 3: break
+            
+            if len(representatives) < 2:
+                representatives = [c[0] for c in candidates[:3]]
+            
+            print(f"✨ tev está reflexionando sobre: {representatives}")
+            reflection = self._ask_llm_reflection(representatives)
+            
+            if reflection:
+                print(f"💡 Reflexión generada: {reflection}")
+                self.inject(reflection, energy=0.3)
+                return f"Reflexión autónoma inyectada: {reflection}"
+            
+            return "tev no pudo encontrar una conexión interesante esta vez."
 
 if __name__ == "__main__":
     print("Motor de Memoria cargado. Usa mem_cli.py para interactuar.")

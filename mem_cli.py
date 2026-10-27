@@ -4,7 +4,7 @@ from mem_engine import MemHolograficEngine
 engine = MemHolograficEngine()
 
 if len(sys.argv) < 2:
-    print("Usage: python mem_cli.py [inject|query|dream] \"text\"")
+    print("Usage: python mem_cli.py [inject|query|dream|reflect] \"text\"")
     sys.exit(1)
 
 cmd = sys.argv[1]
@@ -30,5 +30,9 @@ elif cmd == "dream":
     result = engine.dream()
     if result:
         print(result)
+elif cmd == "reflect":
+    result = engine.reflect()
+    if result:
+        print(result)
 else:
-    print("Unknown command. Use: inject, query, or dream")
+    print("Unknown command. Use: inject, query, dream, or reflect")
