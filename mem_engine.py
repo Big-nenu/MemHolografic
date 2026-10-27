@@ -16,8 +16,19 @@ SYNTHESIS_MODEL = os.getenv("MEMHOLOGRAFIC_SYNTHESIS_MODEL", "qwen2.5:0.5b")
 
 # Generador de grafo (opcional, bajo demanda, ligero)
 GRAPH_ENABLED = os.getenv("MEMHOLOGRAFIC_GRAPH_ENABLED", "false").lower() == "true"
-GRAPH_MODEL = os.getenv("MEMHOLOGRAFIC_GRAPH_MODEL", SYNTHESIS_MODEL)
+GRAPH_MODEL = os.getenv("MEMHOLOGRAFIC_GRAPH_MODEL", SYNTHESIS_MODEL)  # qwen2.5:0.5b recomendado para NER
 GRAPH_OUTPUT_PATH = os.getenv("MEMHOLOGRAFIC_GRAPH_OUTPUT", "memoria_grafo.html")
+
+# Mapeo para normalizar nombres de entidades (unificar duplicados)
+ENTITY_ALIASES = {
+    "luis": "Luis Hernandez",
+    "luis hernandez": "Luis Hernandez",
+}
+
+def _normalize_entity_name(nombre):
+    """Normaliza nombres de entidades para evitar duplicados (ej. 'Luis' -> 'Luis Hernandez')."""
+    nombre_lower = nombre.strip().lower()
+    return ENTITY_ALIASES.get(nombre_lower, nombre.strip())
 
 # Lista de temas predefinidos para clasificación automática
 CLASSIFICATION_TOPICS = [
@@ -400,10 +411,12 @@ class MemHolograficEngine:
 Analiza el siguiente texto y devuelve SOLO un JSON válido con esta estructura:
 {{"entidades": [{{"nombre": "...", "tipo": "..."}}], "relaciones": [{{"origen": "...", "destino": "...", "relacion": "..."}}]}}
 
-Reglas:
-- Extrae entidades nombradas: personas, proyectos, empresas, tecnologías, lugares, conceptos.
+Reglas importantes:
+- Identifica a la persona principal (ej. "Luis Hernandez") como entidad de tipo "persona".
+- Extrae todas las entidades nombradas: proyectos, tecnologías, lugares, conceptos, juegos.
 - Tipos de entidad válidos: persona, proyecto, tecnologia, lugar, concepto, habilidad, juego.
 - Relaciones válidas: trabaja_en, estudio_en, usa, vive_en, gusta_de, interesa_en, escribio, creo, es_de, relacionado_con.
+- Si hay una persona, crea relaciones DESDE esa persona HACIA las otras entidades.
 - No inventes entidades que no estén en el texto.
 - Si no hay entidades claras, devuelve arrays vacíos.
 
@@ -414,7 +427,6 @@ JSON:"""
             r = requests.post(OLLAMA_GEN_URL, json={"model": GRAPH_MODEL, "prompt": prompt, "stream": False}, timeout=30)
             if r.status_code == 200:
                 response = r.json().get("response", "").strip()
-                # Intentar extraer el JSON de la respuesta
                 start = response.find("{")
                 end = response.rfind("}")
                 if start != -1 and end != -1 and end > start:
@@ -425,16 +437,119 @@ JSON:"""
                     relaciones = data.get("relaciones", [])
                     resultado = []
                     for rel in relaciones:
-                        resultado.append((
-                            rel.get("origen", ""),
-                            rel.get("destino", ""),
-                            rel.get("relacion", "relacionado_con"),
-                            text[:80]
-                        ))
-                    return resultado, entidades
+                        origen = _normalize_entity_name(rel.get("origen", ""))
+                        destino = _normalize_entity_name(rel.get("destino", ""))
+                        if origen and destino:
+                            resultado.append((
+                                origen,
+                                destino,
+                                rel.get("relacion", "relacionado_con"),
+                                text[:80]
+                            ))
+                    entidades_normalizadas = []
+                    for ent in entidades:
+                        nombre = _normalize_entity_name(ent.get("nombre", ""))
+                        tipo = ent.get("tipo", "concepto")
+                        if nombre:
+                            entidades_normalizadas.append({"nombre": nombre, "tipo": tipo})
+                    return resultado, entidades_normalizadas
         except Exception:
             pass
         return [], []
+
+    def _get_central_person(self, namespace="default"):
+        """Intenta identificar a la persona principal del namespace."""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT nombre FROM entities WHERE tipo='persona' ORDER BY id LIMIT 1", )
+            row = cursor.fetchone()
+            if row:
+                return row[0]
+            # Si no hay entidades guardadas aún, buscar en los textos de facts
+            cursor.execute("SELECT content FROM facts WHERE namespace=? ORDER BY id", (namespace,))
+            for (content,) in cursor.fetchall():
+                if "Luis Hernandez" in content:
+                    return "Luis Hernandez"
+        return None
+
+    def build_graph_from_facts(self, namespace="default"):
+        """Extrae entidades y relaciones de todos los hechos activos del namespace."""
+        # Limpiar tablas previas para evitar duplicados
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM relationships")
+            cursor.execute("DELETE FROM entities")
+            conn.commit()
+
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT id, content FROM facts WHERE namespace=? ORDER BY id", (namespace,))
+            facts = cursor.fetchall()
+
+        if not facts:
+            return {"entities": [], "relationships": [], "mensaje": "No hay hechos para graficar."}
+
+        all_entities = {}
+        all_relationships = []
+
+        central_person = self._get_central_person(namespace)
+
+        for fact_id, content in facts:
+            relaciones, entidades = self.extract_graph_entities(content)
+            # Registrar entidades
+            for ent in entidades:
+                nombre = ent.get("nombre", "")
+                tipo = ent.get("tipo", "concepto")
+                if nombre and nombre not in all_entities:
+                    all_entities[nombre] = {"nombre": nombre, "tipo": tipo, "embedding": None}
+            # Registrar relaciones del modelo
+            for origen, destino, tipo_rel, contexto in relaciones:
+                if origen and destino:
+                    all_relationships.append({
+                        "origen": origen,
+                        "destino": destino,
+                        "relacion": tipo_rel,
+                        "hecho_id": fact_id,
+                        "contexto": contexto
+                    })
+
+        # Si hay una persona central, asegurar que esté conectada con todo lo demás
+        if central_person:
+            if central_person not in all_entities:
+                all_entities[central_person] = {"nombre": central_person, "tipo": "persona", "embedding": None}
+            # Crear relaciones desde la persona central hacia cada otra entidad
+            for nombre in all_entities:
+                if nombre != central_person:
+                    # Verificar si ya existe una relación directa
+                    ya_existe = any(
+                        r["origen"] == central_person and r["destino"] == nombre
+                        for r in all_relationships
+                    )
+                    if not ya_existe:
+                        all_relationships.append({
+                            "origen": central_person,
+                            "destino": nombre,
+                            "relacion": "relacionado_con",
+                            "hecho_id": None,
+                            "contexto": "conexión implícita desde persona central"
+                        })
+
+        # Guardar en BD
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            for nombre, data in all_entities.items():
+                cursor.execute("INSERT OR IGNORE INTO entities (nombre, tipo, embedding) VALUES (?, ?, ?)",
+                               (nombre, data["tipo"], json.dumps(data["embedding"])))
+            for rel in all_relationships:
+                cursor.execute("INSERT INTO relationships (entidad_origen, entidad_destino, tipo_relacion, hecho_origen_id, peso) VALUES (?, ?, ?, ?, ?)",
+                               (rel["origen"], rel["destino"], rel["relacion"], rel["hecho_id"], 1.0))
+            conn.commit()
+
+        return {
+            "entities": list(all_entities.values()),
+            "relationships": all_relationships,
+            "mensaje": f"Grafo construido: {len(all_entities)} entidades, {len(all_relationships)} relaciones."
+        }
 
     def build_graph_from_facts(self, namespace="default"):
         """Extrae entidades y relaciones de todos los hechos activos del namespace."""
