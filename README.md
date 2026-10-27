@@ -138,6 +138,56 @@ Si no recuerda nada, verifica:
 2. Que ambos apunten a la misma base de datos (`memoria.db`) y namespace (`default`).
 3. Que Ollama esté corriendo con `embeddinggemma-2:270m` y `tev1:0.8b` descargados.
 
+## 🖥️ Instalación en Otra Computadora
+
+Si descargas este repositorio en una PC nueva, sigue estos pasos:
+
+### Requisitos
+- Python 3.10+
+- Ollama corriendo en `http://localhost:11434`
+- Cline (VS Code) con soporte MCP
+
+### 1. Clonar el repositorio
+```bash
+git clone https://github.com/Big-nenu/MemHolografic.git
+cd MemHolografic
+```
+
+### 2. Descargar modelos de Ollama
+```bash
+ollama pull embeddinggemma-2:270m
+ollama pull tev1:0.8b
+ollama pull qwen2.5:0.5b  # opcional (grafo y síntesis)
+```
+
+### 3. Configurar el MCP en Cline
+En `cline_mcp_settings.json`, agrega el servidor con la ruta absoluta al proyecto:
+
+```json
+{
+  "mcpServers": {
+    "memholografic": {
+      "command": "python",
+      "args": ["mcp_server.py"],
+      "cwd": "RUTA_ABSOLUTA_AL_PROYECTO",
+      "env": {
+        "MEMHOLOGRAFIC_DB": "data/memoria-2.db",
+        "MEMHOLOGRAFIC_NAMESPACE": "default",
+        "MEMHOLOGRAFIC_EMBED_MODEL": "embeddinggemma-2:270m",
+        "MEMHOLOGRAFIC_LLM_MODEL": "tev1:0.8b",
+        "MEMHOLOGRAFIC_GRAPH_ENABLED": "false"
+      }
+    }
+  }
+}
+```
+
+### 4. Probar
+Abre una nueva conversación con Cline y pregunta:
+
+> "Hola, ¿cómo me llamo y qué estudié?"
+
+
 ## 🚀 Roadmap: Búsqueda por Temas (memoria rápida y escalable)
 
 **Objetivo:** Que la consulta no tenga que comparar contra *todas* las filas de la BD, sino solo contra los temas relevantes.
