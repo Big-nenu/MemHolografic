@@ -170,7 +170,7 @@ En `cline_mcp_settings.json`, agrega el servidor con la ruta absoluta al proyect
       "args": ["mcp_server.py"],
       "cwd": "RUTA_ABSOLUTA_AL_PROYECTO",
       "env": {
-        "MEMHOLOGRAFIC_NAMESPACE": "default",
+        "MEMHOLOGRAFIC_NAMESPACE": ".memholografic",
         "MEMHOLOGRAFIC_EMBED_MODEL": "embeddinggemma-2:270m",
         "MEMHOLOGRAFIC_LLM_MODEL": "tev1:0.8b",
         "MEMHOLOGRAFIC_GRAPH_ENABLED": "false"
@@ -202,7 +202,7 @@ Para garantizar que el software sea distributable, escalable y seguro, se realiz
 - **Ruta por defecto:** `~/.memholografic/memoria.db`
 
 ### 2. Identidad Dinámica (Eliminación de Hardcoding) 👤
-- **Antes:** `mem_engine.py` contenía una lista manual `ENTITY_ALIASES` con el nombre del desarrollador para unificar entidades en el grafo. Esto era un error de diseño que impedía el uso en otros usuarios.
+- **Antes:** `mem_engine.py` contenía una lista manual `ENTITY_ALIASES` con el nombre del desarrollador para unificar entidades en el grafo. Este era un error de diseño.\n- **Ahora:** Se implementó `os.getlogin()` para detectar dinámicamente al usuario del sistema. El sistema normaliza automáticamente cualquier mención al usuario actual (ej. "Luis", "Usuario") hacia su identidad real sin necesidad de edición manual.
 - **Ahora:** Se implementó `os.getlogin()` para detectar dinámicamente al usuario del sistema. El sistema normaliza automáticamente cualquier mención al usuario actual (ej. "Luis", "Usuario") hacia su identidad real sin necesidad de edición manual.
 
 ### 3. Modularización: Separación de Responsabilidades 🏗️
