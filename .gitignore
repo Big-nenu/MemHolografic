@@ -7,3 +7,4 @@ data/memoria_test.db
 data/memoria_test_final.db
 data/test_archive.db
 data/memoria_grafo.html
+data/*
