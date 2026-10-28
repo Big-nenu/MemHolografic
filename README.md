@@ -117,10 +117,10 @@ Durante la fase de integración con Cline (vía MCP), se identificaron y documen
 ## 🔧 Cambios Recientes (27 de Octubre 2026)
 
 - **Modelos Ollama por defecto:** `EMBEDDING_MODEL` ahora es `embeddinggemma-2:270m` y `LLM_MODEL` es `tev1:0.8b`, leídos nativamente vía `os.getenv()` (`MEMHOLOGRAFIC_EMBED_MODEL`, `MEMHOLOGRAFIC_LLM_MODEL`).
-- **Unificación de base de datos:** Tanto `mem_engine.py` como `mem_cli.py` apuntan por defecto a `memoria.db`.
+- **Unificación de base de datos:** Tanto `mem_engine.py` como `mem_cli.py` apuntan por defecto a `~/.memholografic/memoria.db` (Carpeta oculta en el perfil del usuario).
 - **Corrección de bug:** Eliminado carácter corrupto `//` en `archived_//facts` (línea 36 de `mem_engine.py`).
 - **Variables de entorno soportadas:**
-  - `MEMHOLOGRAFIC_DB` — ruta de la BD (default: `memoria.db`)
+  - `MEMHOLOGRAFIC_DB` — ruta de la BD (default: `~/.memholografic/memoria.db`)
   - `MEMHOLOGRAFIC_NAMESPACE` — namespace activo (default: `"default"`)
   - `MEMHOLOGRAFIC_EMBED_MODEL` — modelo de embeddings en Ollama
   - `MEMHOLOGRAFIC_LLM_MODEL` — modelo LLM en Ollama
@@ -135,7 +135,7 @@ El sistema debería responder con los datos guardados en `memoria.db` sin que te
 
 Si no recuerda nada, verifica:
 1. Que solo tengas habilitado el MCP `memholografic` (deshabilita el de `memory` si lo hay).
-2. Que ambos apunten a la misma base de datos (`memoria.db`) y namespace (`default`).
+2. Que el servidor esté configurado con el namespace correcto (default: `default`).
 3. Que Ollama esté corriendo con `embeddinggemma-2:270m` y `tev1:0.8b` descargados.
 
 ## 🖥️ Instalación en Otra Computadora
@@ -171,7 +171,7 @@ En `cline_mcp_settings.json`, agrega el servidor con la ruta absoluta al proyect
       "args": ["mcp_server.py"],
       "cwd": "RUTA_ABSOLUTA_AL_PROYECTO",
       "env": {
-        "MEMHOLOGRAFIC_DB": "data/memoria-2.db",
+
         "MEMHOLOGRAFIC_NAMESPACE": "default",
         "MEMHOLOGRAFIC_EMBED_MODEL": "embeddinggemma-2:270m",
         "MEMHOLOGRAFIC_LLM_MODEL": "tev1:0.8b",
@@ -187,6 +187,30 @@ Abre una nueva conversación con Cline y pregunta:
 
 > "Hola, ¿cómo me llamo y qué estudié?"
 
+
+
+## 🏗️ Arquitectura Profesional (28 de Octubre 2026)
+
+Para garantizar que el software sea distributable, escalable y seguro, se realizó una reestructuración profunda del código:
+
+### 1. Persistencia en Home Directory (`.memholografic`) 🏠
+- **Antes:** Las bases de datos se guardaban en la carpeta del repositorio (`data/memoria-2.db`). Esto implicaba que al borrar el proyecto, se perdía toda la memoria.
+- **Ahora:** El sistema utiliza `Path.home()` para crear una carpeta oculta `.memholografic` en el perfil del usuario.
+- **Beneficio:** La memoria es persistente a nivel de sistema operativo. Si el usuario clona el repositorio en otra carpeta o lo borra, sus recuerdos permanecen intactos en su perfil.
+- **Ruta por defecto:** `~/.memholografic/memoria.db`
+
+### 2. Identidad Dinámica (Eliminación de Hardcoding) 👤
+- **Antes:** `mem_engine.py` contenía una lista manual `ENTITY_ALIASES` con el nombre del desarrollador para unificar entidades en el grafo. Esto era un error de diseño que impedía el uso en otros usuarios.
+- **Ahora:** Se implementó `os.getlogin()` para detectar dinámicamente al usuario del sistema. El sistema normaliza automáticamente cualquier mención al usuario actual (ej. "Luis", "Usuario") hacia su identidad real sin necesidad de edición manual.
+
+### 3. Modularización: Separación de Responsabilidades 🏗️
+- **`mem_engine.py`:** Ahora es un núcleo limpio enfocado exclusivamente en la lógica de memoria (inyección, consulta, sueño, reflexión).
+- **`graph_engine.py` (Nuevo):** Se creó este módulo exclusivo para la extracción de entidades y la generación de grafos HTML. Esto permite que el motor de memoria sea ligero y que la visualización se pueda evolucionar de forma independiente.
+
+### 4. Migración Automática
+- Se implementó lógica para detectar y migrar bases de datos antiguas a la nueva ubicación profesional si es necesario.
+
+---
 
 ## 🚀 Roadmap: Búsqueda por Temas (memoria rápida y escalable)
 

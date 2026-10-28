@@ -1,5 +1,6 @@
 import sys
 import argparse
+from pathlib import Path
 from mem_engine import MemHolograficEngine
 
 def main():
@@ -10,7 +11,10 @@ def main():
     parser.add_argument("-e", "--energy", type=float, default=0.5, help="Energía inicial para la inyección (default: 0.5)")
 
     args = parser.parse_args()
-    engine = MemHolograficEngine(db_path="data/memoria-2.db")
+    
+    # Ruta profesional dinámica
+    db_path = str(Path.home() / ".memholografic" / "memoria.db")
+    engine = MemHolograficEngine(db_path=db_path)
 
     if args.command == "inject":
         if not args.text:
