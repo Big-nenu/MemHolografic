@@ -108,11 +108,10 @@ Durante la fase de integración con Cline (vía MCP), se identificaron y documen
 - **Solución:** Se corrigió la ruta del ejecutable de Python en `cline_mcp_settings.json` al valor verificado: `C:\Program Files\Python314\python.exe`.
 - **Recomendación General:** Siempre utilice el comando `where python` para obtener la ruta absoluta del intérprete antes de configurar un servidor MCP.
 
-### 3. Fallo de Recuperación entre Sesiones: El "Olvido Selectivo" 🧠❌
-- **Síntoma:** Aunque la conexión MCP funcionaba, Cline no "recordaba" información inyectada en conversaciones anteriores, devolviendo siempre *"No se encontraron recuerdos relacionados"*.
-- **Diagnóstico:** La raíz del problema fue un **desajuste de namespaces**. Los datos de Luis estaban almacenados en el namespace `"simulation"`, pero el servidor MCP (y por tanto, Cline) consultaban el namespace `"default"` por defecto. La IA buscaba la información en la "carpeta equivocada".
-- **Solución:** Se implementó una **Arquitectura de Namespace Dinámico** en `mcp_server.py`. El servidor ahora tiene una variable de entorno `MEMHOLOGRAFIC_NAMESPACE` (configurada en `"simulation"` por defecto) que permite redirigir las consultas al namespace correcto sin necesidad de que la IA lo especifique explícitamente en cada llamada. Esto mantiene el aislamiento de contexto (ideal para proyectos múltiples) y garantiza la persistencia entre sesiones.
-- **Verificación:** Pruebas con subagentes confirmaron la correcta inyección y recuperación de datos en el namespace `proof_test`, validando todo el flujo de trabajo.
+### 3. El Concepto de Namespace y Aislamiento de Memoria 🧠
+- **Qué es un Namespace en MemHolografic?** Es un "proyecto ID" o "etiqueta de contexto". Los recuerdos inyectados se guardan bajo un namespace. Cuando la IA consulta, solo busca dentro del namespace activo. Esto evita que la memoria de un proyecto se mezcle con la de otro.
+- **Namespace por defecto:** El servidor MCP usa `"default"` como namespace si no se especifica otro.
+- **Namespace Personalizado:** Puedes usar un namespace específico (ej: `"neodata"`, `"investigacion"`, `"personal"`) para separar la memoria por contexto. Esto es útil si quieres mantener memoria de trabajo independiente de tu memoria personal.
 
 ## 🔧 Cambios Recientes (27 de Octubre 2026)
 
@@ -135,7 +134,7 @@ El sistema debería responder con los datos guardados en `memoria.db` sin que te
 
 Si no recuerda nada, verifica:
 1. Que solo tengas habilitado el MCP `memholografic` (deshabilita el de `memory` si lo hay).
-2. Que el servidor esté configurado con el namespace correcto (default: `default`).
+2. Que el `MEMHOLOGRAFIC_NAMESPACE` en tu configuración coincida con el namespace donde inyectaste (si no lo pusiste, usa `"default"`).
 3. Que Ollama esté corriendo con `embeddinggemma-2:270m` y `tev1:0.8b` descargados.
 
 ## 🖥️ Instalación en Otra Computadora
@@ -171,7 +170,6 @@ En `cline_mcp_settings.json`, agrega el servidor con la ruta absoluta al proyect
       "args": ["mcp_server.py"],
       "cwd": "RUTA_ABSOLUTA_AL_PROYECTO",
       "env": {
-
         "MEMHOLOGRAFIC_NAMESPACE": "default",
         "MEMHOLOGRAFIC_EMBED_MODEL": "embeddinggemma-2:270m",
         "MEMHOLOGRAFIC_LLM_MODEL": "tev1:0.8b",
@@ -181,6 +179,10 @@ En `cline_mcp_settings.json`, agrega el servidor con la ruta absoluta al proyect
   }
 }
 ```
+
+> ℹ️ **Nota sobre `MEMHOLOGRAFIC_NAMESPACE`:** Si omites esta variable, el servidor usará `"default"` automáticamente.
+> - Usa `"default"` (o `"personal"`) para una memoria general única.
+> - Usa un nombre de proyecto (ej: `"neodata"`) para aislar esa memoria y que sea consultada solo cuando trabajes en ese contexto.
 
 ### 4. Probar
 Abre una nueva conversación con Cline y pregunta:
