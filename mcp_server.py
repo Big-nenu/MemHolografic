@@ -36,14 +36,16 @@ def _all_memories(limit: int = 30) -> str:
         facts = engine.get_all_facts(namespace=NS)
     if not facts:
         return "La memoria está vacía todavía."
-    shown = facts[-limit:]
+    shown = facts[:limit]
     text = "\n".join(f"- {f}" for f in shown)
-    extra = f"\n(Se muestran los últimos {len(shown)} de {len(facts)})" if len(facts) > len(shown) else ""
+    extra = f"\n(Se muestran los {len(shown)} con más energía de {len(facts)})" if len(facts) > len(shown) else ""
     return f"Memoria ({len(facts)} recuerdos):\n{text}{extra}"
 
 @mcp.tool()
 def list_memories(limit: int = 30) -> str:
     """LLAMA ESTO AL INICIO de CADA CONVERSACIÓN. Devuelve lo que ya se sabe del usuario."""
+    with _quiet():
+        engine.decay(namespace=NS)
     return _all_memories(limit)
 
 @mcp.tool()
@@ -93,7 +95,7 @@ def clear_memory(confirm: bool = False) -> str:
 @mcp.tool()
 def generate_graph(open_browser: bool = True) -> str:
     """Genera un grafo visual de las relaciones entre entidades de la memoria."""
-    if not mem_engine.GRAPH_ENABLED:
+    if not GRAPH_ENABLED:
         return "El generador de grafo está desactivado."
     
     graph_engine = GraphEngine(DB_PATH)

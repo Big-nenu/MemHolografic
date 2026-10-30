@@ -1,10 +1,14 @@
+﻿# Python
 __pycache__/
+*.pyc
+.venv/
+
+# Bases de datos y datos locales (la memoria vive en ~/.memholografic)
+*.db
+*.db-journal
 *.bak
 *.bak2
-*.pyc
-data/memoria.db
-data/memoria_test.db
-data/memoria_test_final.db
-data/test_archive.db
-data/memoria_grafo.html
-data/*
+data/
+
+# Generados
+memoria_grafo.html
